@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/vbauerster/mpb/v7/internal"
+	"github.com/wux1an/mpb/v7/internal"
 )
 
 type percentageType float64

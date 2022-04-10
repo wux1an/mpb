@@ -6,8 +6,8 @@ import (
 
 	"github.com/acarl005/stripansi"
 	"github.com/mattn/go-runewidth"
-	"github.com/vbauerster/mpb/v7/decor"
-	"github.com/vbauerster/mpb/v7/internal"
+	"github.com/wux1an/mpb/v7/decor"
+	"github.com/wux1an/mpb/v7/internal"
 )
 
 const (

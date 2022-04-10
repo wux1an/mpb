@@ -1,4 +1,4 @@
-module github.com/vbauerster/mpb/v7
+module github.com/wux1an/mpb/v7
 
 require (
 	github.com/VividCortex/ewma v1.2.0

@@ -1,3 +1,4 @@
+//go:build windows
 // +build windows
 
 package cwriter
@@ -15,7 +16,7 @@ var (
 	procFillConsoleOutputCharacter = kernel32.NewProc("FillConsoleOutputCharacterW")
 )
 
-func (w *Writer) clearLines() error {
+func (w *Writer) ClearLines() error {
 	if !w.isTerminal {
 		// hope it's cygwin or similar
 		return w.ansiCuuAndEd()

@@ -11,8 +11,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/vbauerster/mpb/v7"
-	"github.com/vbauerster/mpb/v7/decor"
+	"github.com/wux1an/mpb/v7/decor"
 )
 
 func TestBarCompleted(t *testing.T) {

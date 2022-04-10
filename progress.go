@@ -11,8 +11,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/vbauerster/mpb/v7/cwriter"
-	"github.com/vbauerster/mpb/v7/decor"
+	"github.com/wux1an/mpb/v7/cwriter"
+	"github.com/wux1an/mpb/v7/decor"
 )
 
 const (
@@ -24,6 +24,7 @@ type Progress struct {
 	ctx          context.Context
 	uwg          *sync.WaitGroup
 	cwg          *sync.WaitGroup
+	cw           *cwriter.Writer
 	bwg          *sync.WaitGroup
 	operateState chan func(*pState)
 	done         chan struct{}
@@ -75,18 +76,19 @@ func NewWithContext(ctx context.Context, options ...ContainerOption) *Progress {
 			opt(s)
 		}
 	}
-
 	p := &Progress{
 		ctx:          ctx,
 		uwg:          s.uwg,
 		cwg:          new(sync.WaitGroup),
+		cw:           cwriter.New(s.output),
 		bwg:          new(sync.WaitGroup),
 		operateState: make(chan func(*pState)),
 		done:         make(chan struct{}),
 	}
 
 	p.cwg.Add(1)
-	go p.serve(s, cwriter.New(s.output))
+
+	go p.serve(s)
 	return p
 }
 
@@ -106,8 +108,8 @@ func (p *Progress) New(total int64, builder BarFillerBuilder, options ...BarOpti
 }
 
 // Add creates a bar which renders itself by provided filler.
-// If `total <= 0` triggering complete event by increment methods is disabled.
-// Panics if *Progress instance is done, i.e. called after (*Progress).Wait().
+// If `total <= 0` trigger complete event is disabled until reset with (*bar).SetTotal(int64, bool).
+// Panics if *Progress instance is done, i.e. called after (*Progress).Wait.
 func (p *Progress) Add(total int64, filler BarFiller, options ...BarOption) *Bar {
 	if filler == nil {
 		filler = NopStyle().Build()
@@ -136,7 +138,7 @@ func (p *Progress) Add(total int64, filler BarFiller, options ...BarOption) *Bar
 }
 
 func (p *Progress) traverseBars(cb func(b *Bar) bool) {
-	sync := make(chan struct{})
+	done := make(chan struct{})
 	select {
 	case p.operateState <- func(s *pState) {
 		for i := 0; i < s.bHeap.Len(); i++ {
@@ -145,9 +147,9 @@ func (p *Progress) traverseBars(cb func(b *Bar) bool) {
 				break
 			}
 		}
-		close(sync)
+		close(done)
 	}:
-		<-sync
+		<-done
 	case <-p.done:
 	}
 }
@@ -181,8 +183,8 @@ func (p *Progress) BarCount() int {
 // After this method has been called, there is no way to reuse *Progress
 // instance.
 func (p *Progress) Wait() {
-	// wait for user wg, if any
 	if p.uwg != nil {
+		// wait for user wg
 		p.uwg.Wait()
 	}
 
@@ -199,7 +201,7 @@ func (p *Progress) shutdown() {
 	close(p.done)
 }
 
-func (p *Progress) serve(s *pState, cw *cwriter.Writer) {
+func (p *Progress) serve(s *pState) {
 	defer p.cwg.Done()
 
 	p.refreshCh = s.newTicker(p.done)
@@ -209,7 +211,7 @@ func (p *Progress) serve(s *pState, cw *cwriter.Writer) {
 		case op := <-p.operateState:
 			op(s)
 		case <-p.refreshCh:
-			if err := s.render(cw); err != nil {
+			if err := s.render(p.cw); err != nil {
 				if s.debugOut != nil {
 					_, e := fmt.Fprintln(s.debugOut, err)
 					if e != nil {
@@ -221,7 +223,7 @@ func (p *Progress) serve(s *pState, cw *cwriter.Writer) {
 			}
 		case <-s.shutdownNotifier:
 			for s.heapUpdated {
-				if err := s.render(cw); err != nil {
+				if err := s.render(p.cw); err != nil {
 					if s.debugOut != nil {
 						_, e := fmt.Fprintln(s.debugOut, err)
 						if e != nil {
@@ -235,6 +237,17 @@ func (p *Progress) serve(s *pState, cw *cwriter.Writer) {
 			return
 		}
 	}
+}
+
+func (p *Progress) Write(content []byte) (n int, err error) {
+	p.cw.Lock()
+	defer p.cw.Unlock()
+	if p.cw.LastTypeIsProgress {
+		_ = p.cw.ClearLines()
+	}
+	write, err := p.cw.Write(content)
+	p.cw.LastTypeIsProgress = false
+	return write, err
 }
 
 func (s *pState) render(cw *cwriter.Writer) error {
@@ -269,7 +282,8 @@ func (s *pState) flush(cw *cwriter.Writer) error {
 			return err
 		}
 		if frame.shutdown {
-			b.Wait() // waiting for b.done, so it's safe to read b.bs
+			b.cancel()
+			<-b.done // waiting for b.done, so it's safe to read b.bs
 			var toDrop bool
 			if qb, ok := s.queueBars[b]; ok {
 				delete(s.queueBars, b)
